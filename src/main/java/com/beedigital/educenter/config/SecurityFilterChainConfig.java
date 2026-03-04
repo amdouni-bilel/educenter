@@ -79,17 +79,25 @@ public class SecurityFilterChainConfig {
 
                 // Autoriser les endpoints PUBLICS
                 .authorizeHttpRequests(authz -> authz
-                        // ✅ ENDPOINTS PUBLICS - Sans authentification
+
+                        // ✅ ENDPOINTS PUBLICS - Auth
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/register").permitAll()
                         .requestMatchers("/api/auth/refresh").permitAll()
                         .requestMatchers("/api/auth/verify").permitAll()
 
-                        // ✅ Actuator + Health (optionnel)
+                        // ✅ Swagger / OpenAPI
+                        .requestMatchers(
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html"
+                        ).permitAll()
+
+                        // ✅ Actuator
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/health/**").permitAll()
 
-                        // 🔒 TOUS LES AUTRES - Authentification requise
+                        // 🔒 Tous les autres endpoints
                         .anyRequest().authenticated()
                 )
 
