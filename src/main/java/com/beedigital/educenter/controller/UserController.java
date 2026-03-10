@@ -4,131 +4,123 @@ import com.beedigital.educenter.dto.UserDTO;
 import com.beedigital.educenter.dto.ApiResponse;
 import com.beedigital.educenter.dto.CreateUserRequest;
 import com.beedigital.educenter.service.UserService;
-import com.beedigital.educenter.util.JwtUtil;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import java.util.List;
 
-/**
- * UserController - CRUD des utilisateurs avec gestion des permissions
- *
- * @author Équipe Développement
- * @version 2.0
- */
 @RestController
 @RequestMapping("/api/users")
 @CrossOrigin(origins = "*", maxAge = 3600)
+@RequiredArgsConstructor
 public class UserController {
 
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
 
-    @Autowired
-    private JwtUtil jwtUtil;
-
-    /**
-     * CREATE USER - Créer un nouvel utilisateur
-     */
+    // ─── Créer un utilisateur ──────────────────────────────────────────────────
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<?> createUser(
-            @RequestHeader("Authorization") String authHeader,
-            @Valid @RequestBody CreateUserRequest request) {
+            @Valid @RequestBody CreateUserRequest request,
+            Authentication authentication) {
         try {
-            String token = authHeader.replace("Bearer ", "").trim();
-            if (!jwtUtil.validateToken(token)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(new ApiResponse(false, "❌ Token invalide ou expiré", null));
-            }
-
-            String creatorRole = jwtUtil.extractRole(token);
+            String creatorRole = authentication.getAuthorities().iterator().next().getAuthority();
             UserDTO newUser = userService.createUser(request, creatorRole);
-
             return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(new ApiResponse(true, "✅ Utilisateur créé avec succès", newUser));
-
-        } catch (Exception e) {
-            int statusCode = e.getMessage().contains("peut créer") ? 403 : 400;
-            return ResponseEntity.status(statusCode)
-                    .body(new ApiResponse(false, "❌ " + e.getMessage(), null));
-        }
-    }
-
-    /**
-     * GET ALL USERS - Lister tous les utilisateurs
-     */
-    @GetMapping
-    public ResponseEntity<?> getAllUsers(
-            @RequestHeader("Authorization") String authHeader) {
-        try {
-            String token = authHeader.replace("Bearer ", "").trim();
-            if (!jwtUtil.validateToken(token)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(new ApiResponse(false, "❌ Token invalide ou expiré", null));
-            }
-
-            List<UserDTO> users = userService.getAllUsers();
-
-            return ResponseEntity.ok(new ApiResponse(true, "✅ Utilisateurs récupérés", users));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ApiResponse(false, "❌ Erreur: " + e.getMessage(), null));
-        }
-    }
-
-    /**
-     * GET USER BY ID - Obtenir un utilisateur spécifique
-     */
-    @GetMapping("/{id}")
-    public ResponseEntity<?> getUserById(
-            @PathVariable Long id,
-            @RequestHeader("Authorization") String authHeader) {
-        try {
-            String token = authHeader.replace("Bearer ", "").trim();
-            if (!jwtUtil.validateToken(token)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(new ApiResponse(false, "❌ Token invalide ou expiré", null));
-            }
-
-            UserDTO user = userService.getUserById(id);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(new ApiResponse(false, "❌ Utilisateur non trouvé", null));
-            }
-
-            return ResponseEntity.ok(new ApiResponse(true, "✅ Utilisateur trouvé", user));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ApiResponse(false, "❌ Erreur: " + e.getMessage(), null));
-        }
-    }
-
-    /**
-     * DELETE USER - Supprimer un utilisateur
-     */
-    @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteUser(
-            @PathVariable Long id,
-            @RequestHeader("Authorization") String authHeader) {
-        try {
-            String token = authHeader.replace("Bearer ", "").trim();
-            if (!jwtUtil.validateToken(token)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(new ApiResponse(false, "❌ Token invalide ou expiré", null));
-            }
-
-            String role = jwtUtil.extractRole(token);
-            userService.deleteUser(id, role);
-
-            return ResponseEntity.ok(new ApiResponse(true, "✅ Utilisateur supprimé", null));
-
+                    .body(new ApiResponse(true, "Utilisateur créé avec succès", newUser));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiResponse(false, e.getMessage(), null));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ApiResponse(false, "❌ " + e.getMessage(), null));
+                    .body(new ApiResponse(false, e.getMessage(), null));
+        }
+    }
+
+    // ─── Lister tous les utilisateurs ─────────────────────────────────────────
+    @GetMapping
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<?> getAllUsers() {
+        try {
+            List<UserDTO> users = userService.getAllUsers();
+            return ResponseEntity.ok(new ApiResponse(true, "Utilisateurs récupérés", users));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse(false, e.getMessage(), null));
+        }
+    }
+
+    // ─── Mon propre profil (tous les rôles) ────────────────────────────────────
+    @GetMapping("/me")
+    public ResponseEntity<?> getMyProfile(Authentication authentication) {
+        try {
+            String email = authentication.getName();
+            UserDTO user = userService.getUserByEmail(email);
+            return ResponseEntity.ok(new ApiResponse(true, "Profil récupéré", user));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ApiResponse(false, e.getMessage(), null));
+        }
+    }
+
+    // ─── Détail d'un utilisateur par ID ───────────────────────────────────────
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<?> getUserById(@PathVariable Long id) {
+        try {
+            UserDTO user = userService.getUserById(id);
+            return ResponseEntity.ok(new ApiResponse(true, "Utilisateur trouvé", user));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ApiResponse(false, "Utilisateur non trouvé", null));
+        }
+    }
+
+    // ─── Modifier un utilisateur ───────────────────────────────────────────────
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<?> updateUser(
+            @PathVariable Long id,
+            @Valid @RequestBody CreateUserRequest request) {
+        try {
+            UserDTO updated = userService.updateUser(id, request);
+            return ResponseEntity.ok(new ApiResponse(true, "Utilisateur mis à jour", updated));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ApiResponse(false, e.getMessage(), null));
+        }
+    }
+
+    // ─── Activer / Désactiver un utilisateur ───────────────────────────────────
+    @PatchMapping("/{id}/status")
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
+    public ResponseEntity<?> toggleUserStatus(
+            @PathVariable Long id,
+            @RequestParam Boolean isActive) {
+        try {
+            UserDTO updated = userService.toggleStatus(id, isActive);
+            String msg = isActive ? "Utilisateur activé" : "Utilisateur désactivé";
+            return ResponseEntity.ok(new ApiResponse(true, msg, updated));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ApiResponse(false, e.getMessage(), null));
+        }
+    }
+
+    // ─── Supprimer un utilisateur ──────────────────────────────────────────────
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
+    public ResponseEntity<?> deleteUser(@PathVariable Long id) {
+        try {
+            userService.deleteUser(id);
+            return ResponseEntity.ok(new ApiResponse(true, "Utilisateur supprimé", null));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ApiResponse(false, e.getMessage(), null));
         }
     }
 }

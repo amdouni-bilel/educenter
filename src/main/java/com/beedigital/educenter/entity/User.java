@@ -1,4 +1,5 @@
 package com.beedigital.educenter.entity;
+
 import com.beedigital.educenter.enums.RoleEnum;
 import lombok.*;
 import jakarta.persistence.*;
@@ -16,8 +17,7 @@ public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id; //string
-    //genre nationalité
+    private Long id;
 
     @Column(unique = true, nullable = false)
     private String username;
@@ -40,6 +40,17 @@ public class User {
 
     @Column(length = 255)
     private String address;
+
+    // ─── Ajoutés ici car communs à tous les utilisateurs ───────────────────────
+    @Column(length = 10)
+    private String gender;          // M, F, AUTRE
+
+    @Column(length = 100)
+    private String nationality;     // Tunisienne, Française, etc.
+    // ───────────────────────────────────────────────────────────────────────────
+
+    @Column(length = 500)
+    private String avatarUrl;       // Photo de profil
 
     @Column(length = 500)
     private String verificationToken;
@@ -72,12 +83,17 @@ public class User {
     private LocalDateTime approvedAt;
     private LocalDateTime rejectedAt;
 
+    // ─── Méthodes utilitaires ──────────────────────────────────────────────────
     public String getFullName() {
         return firstName + " " + lastName;
     }
 
     public boolean isSuperAdmin() {
         return role != null && role.getCode() == RoleEnum.SUPER_ADMIN;
+    }
+
+    public boolean isAdmin() {
+        return role != null && role.getCode() == RoleEnum.REGISTRAR;
     }
 
     public boolean isRegistrar() {
@@ -92,6 +108,14 @@ public class User {
         return role != null && role.getCode() == RoleEnum.STUDENT;
     }
 
+    public boolean isParent() {
+        return role != null && role.getCode() == RoleEnum.PARENT;
+    }
+
+    public boolean hasAdminAccess() {
+        return isSuperAdmin() || isAdmin();
+    }
+
     public boolean isPending() {
         return registrationStatus != null && registrationStatus.equals("PENDING");
     }
@@ -102,5 +126,11 @@ public class User {
 
     public boolean canLogin() {
         return isActive && isApproved();
+    }
+
+    public String getInitials() {
+        String f = (firstName != null && !firstName.isEmpty()) ? String.valueOf(firstName.charAt(0)) : "";
+        String l = (lastName != null && !lastName.isEmpty()) ? String.valueOf(lastName.charAt(0)) : "";
+        return (f + l).toUpperCase();
     }
 }

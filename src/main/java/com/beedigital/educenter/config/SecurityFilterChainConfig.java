@@ -1,5 +1,7 @@
 package com.beedigital.educenter.config;
 
+import com.beedigital.educenter.security.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -8,51 +10,33 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import java.util.List;
 
-/**
- * SecurityFilterChain - Configuration Spring Security
- *
- * ✅ Endpoints PUBLICS (sans authentification):
- * - POST /api/auth/login
- * - POST /api/auth/register
- * - POST /api/auth/refresh
- * - GET  /api/auth/verify
- *
- * 🔒 Endpoints PROTÉGÉS (avec JWT):
- * - GET  /api/auth/me
- * - POST /api/users
- * - GET  /api/users
- * - etc...
- *
- * @author Équipe Développement
- * @version 2.0
- */
 @Configuration
 @EnableWebSecurity
 public class SecurityFilterChainConfig {
 
-    /**
-     * Password Encoder - BCrypt
-     */
+    @Autowired
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    /**
-     * CORS Configuration
-     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("*"));
+        configuration.setAllowedOriginPatterns(List.of("*"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -60,48 +44,29 @@ public class SecurityFilterChainConfig {
         return source;
     }
 
-    /**
-     * Security Filter Chain
-     */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // Désactiver CSRF (API stateless)
                 .csrf(csrf -> csrf.disable())
-
-                // CORS
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-
-                // Sessions
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
-
-                // Autoriser les endpoints PUBLICS
                 .authorizeHttpRequests(authz -> authz
-
-                        // ✅ ENDPOINTS PUBLICS - Auth
+                        // ✅ PUBLICS
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/register").permitAll()
                         .requestMatchers("/api/auth/refresh").permitAll()
                         .requestMatchers("/api/auth/verify").permitAll()
-
-                        // ✅ Swagger / OpenAPI
-                        .requestMatchers(
-                                "/v3/api-docs/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html"
-                        ).permitAll()
-
+                        // ✅ Swagger
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // ✅ Actuator
-                        .requestMatchers("/actuator/**").permitAll()
-                        .requestMatchers("/health/**").permitAll()
-
-                        // 🔒 Tous les autres endpoints
+                        .requestMatchers("/actuator/**", "/health/**").permitAll()
+                        // 🔒 Tout le reste nécessite JWT
                         .anyRequest().authenticated()
                 )
-
-                // HTTP Basic (optionnel, pour tester rapidement)
+                // ✅ Ajouter le filtre JWT
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .httpBasic(basic -> basic.disable());
 
         return http.build();

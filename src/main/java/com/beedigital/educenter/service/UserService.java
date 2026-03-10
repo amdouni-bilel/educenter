@@ -4,12 +4,16 @@ import com.beedigital.educenter.dto.UserDTO;
 import com.beedigital.educenter.dto.CreateUserRequest;
 import com.beedigital.educenter.entity.User;
 import com.beedigital.educenter.entity.Role;
+import com.beedigital.educenter.entity.Teacher;
 import com.beedigital.educenter.enums.RoleEnum;
 import com.beedigital.educenter.repositories.UserRepository;
 import com.beedigital.educenter.repositories.RoleRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.beedigital.educenter.repositories.TeacherRepository;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -17,49 +21,29 @@ import java.util.stream.Collectors;
  * UserService - Service pour la gestion des utilisateurs (CRUD)
  *
  * PERMISSIONS:
- * ✅ SUPER_ADMIN: Peut créer TOUS (SUPER_ADMIN, REGISTRAR, TEACHER, STUDENT)
- * ✅ REGISTRAR: Peut créer STUDENT, TEACHER
- * ❌ TEACHER: Ne peut créer personne
- * ❌ STUDENT: Ne peut créer personne
- *
- * @author Équipe Développement
- * @version 2.0
+ * ✅ SUPER_ADMIN : Peut créer TOUS les rôles
+ * ✅ REGISTRAR   : Peut créer STUDENT, TEACHER
+ * ❌ TEACHER     : Ne peut créer personne
+ * ❌ STUDENT     : Ne peut créer personne
  */
 @Service
+@RequiredArgsConstructor
 public class UserService {
 
-    @Autowired
-    private UserRepository userRepository;
+    private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final TeacherRepository teacherRepository;
 
-    @Autowired
-    private RoleRepository roleRepository;
-
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-
-    /**
-     * CREATE USER - Créer un nouvel utilisateur par admin
-     *
-     * Vérifications:
-     * 1. Email unique?
-     * 2. Password fort?
-     * 3. Rôle existe?
-     * 4. Permissions du créateur OK?
-     *
-     * @param request Données du nouvel utilisateur
-     * @param creatorRole Rôle de la personne qui crée
-     * @return UserDTO du nouvel utilisateur créé
-     * @throws Exception Si validation échoue ou permissions insuffisantes
-     */
+    // ─── Créer un utilisateur ──────────────────────────────────────────────────
     public UserDTO createUser(CreateUserRequest request, String creatorRole) throws Exception {
 
-        // 1️⃣ Vérifier que l'email est unique
-        User existingUser = userRepository.findByEmail(request.getEmail());
-        if (existingUser != null) {
+        // 1. Email unique ?
+        if (userRepository.findByEmail(request.getEmail()) != null) {
             throw new Exception("Cet email est déjà utilisé");
         }
 
-        // 2️⃣ Vérifier que le rôle à créer est valide
+        // 2. Rôle valide ?
         RoleEnum targetRole;
         try {
             targetRole = RoleEnum.valueOf(request.getRoleCode());
@@ -67,129 +51,162 @@ public class UserService {
             throw new Exception("Rôle invalide: " + request.getRoleCode());
         }
 
-        // 3️⃣ Vérifier les permissions du créateur
+        // 3. Permissions du créateur
         checkPermissionToCreateRole(creatorRole, targetRole);
 
-        // 4️⃣ Récupérer le rôle depuis la BD
+        // 4. Récupérer le rôle en base
         Role role = roleRepository.findByCode(targetRole);
         if (role == null) {
             throw new Exception("Rôle non trouvé en base de données");
         }
 
-        // 5️⃣ Créer l'utilisateur
+        // 5. Créer l'utilisateur
         User newUser = User.builder()
-                .username(request.getEmail().split("@")[0])  // Username = partie avant @
+                .username(request.getEmail().split("@")[0])
                 .email(request.getEmail())
-                .password(passwordEncoder.encode(request.getPassword()))  // Hasher le password
+                .password(passwordEncoder.encode(request.getPassword()))
                 .firstName(request.getFirstName())
                 .lastName(request.getLastName())
                 .phone(request.getPhone())
                 .address(request.getAddress())
                 .role(role)
-                .isActive(true)  // Créé par admin = activé directement
-                .registrationStatus("APPROVED")  // Créé par admin = approuvé
+                .isActive(true)
+                .registrationStatus("APPROVED")
                 .build();
 
-        // 6️⃣ Sauvegarder
-        User savedUser = userRepository.save(newUser);
-
-        // 7️⃣ Retourner le DTO
-        return convertToDTO(savedUser);
+        return convertToDTO(userRepository.save(newUser));
     }
 
-    /**
-     * GET ALL USERS - Récupérer tous les utilisateurs
-     */
+    // ─── Lister tous les utilisateurs ─────────────────────────────────────────
     public List<UserDTO> getAllUsers() {
-        List<User> users = userRepository.findAll();
-        return users.stream()
+        return userRepository.findAll()
+                .stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
 
-    /**
-     * GET USER BY ID - Récupérer un utilisateur spécifique
-     */
+    // ─── Récupérer par ID ──────────────────────────────────────────────────────
     public UserDTO getUserById(Long id) {
-        User user = userRepository.findById(id).orElse(null);
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé avec l'ID : " + id));
+        return convertToDTO(user);
+    }
+
+    // ─── Récupérer par email (pour /me) ── AJOUTÉ ─────────────────────────────
+    public UserDTO getUserByEmail(String email) {
+        User user = userRepository.findByEmail(email);
         if (user == null) {
-            return null;
+            throw new EntityNotFoundException("Utilisateur non trouvé avec l'email : " + email);
         }
         return convertToDTO(user);
     }
 
-    /**
-     * DELETE USER - Supprimer un utilisateur
-     *
-     * ⚠️ SUPER_ADMIN ONLY!
-     * ⚠️ Impossible de supprimer le SUPER_ADMIN!
-     *
-     * @param id ID de l'utilisateur à supprimer
-     * @param deleterRole Rôle de la personne qui supprime
-     * @throws Exception Si permissions insuffisantes
-     */
-    public void deleteUser(Long id, String deleterRole) throws Exception {
+    // ─── Modifier un utilisateur ── AJOUTÉ ────────────────────────────────────
+    public UserDTO updateUser(Long id, CreateUserRequest request) throws Exception {
+        User existing = userRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé avec l'ID : " + id));
 
-        // Seul SUPER_ADMIN peut supprimer
-        if (!deleterRole.equals("SUPER_ADMIN")) {
-            throw new Exception("Seul SUPER_ADMIN peut supprimer des utilisateurs");
+        // Vérifier email unique si changé
+        if (!existing.getEmail().equals(request.getEmail())) {
+            if (userRepository.findByEmail(request.getEmail()) != null) {
+                throw new Exception("Cet email est déjà utilisé");
+            }
+            existing.setEmail(request.getEmail());
+            existing.setUsername(request.getEmail().split("@")[0]);
         }
 
-        // Récupérer l'utilisateur à supprimer
-        User user = userRepository.findById(id).orElse(null);
-        if (user == null) {
-            throw new Exception("Utilisateur non trouvé");
+        existing.setFirstName(request.getFirstName());
+        existing.setLastName(request.getLastName());
+        existing.setPhone(request.getPhone());
+        existing.setAddress(request.getAddress());
+
+        // Changer le mot de passe seulement si fourni
+        if (request.getPassword() != null && !request.getPassword().isBlank()) {
+            existing.setPassword(passwordEncoder.encode(request.getPassword()));
         }
 
-        // Ne pas supprimer le SUPER_ADMIN
+        return convertToDTO(userRepository.save(existing));
+    }
+
+    // ─── Activer / Désactiver un utilisateur ── AJOUTÉ ────────────────────────
+    public UserDTO toggleStatus(Long id, Boolean isActive) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé avec l'ID : " + id));
+
+        // Impossible de désactiver un SUPER_ADMIN
+        if (user.getRole().getCode() == RoleEnum.SUPER_ADMIN && !isActive) {
+            throw new SecurityException("Impossible de désactiver le SUPER_ADMIN");
+        }
+
+        user.setIsActive(isActive);
+        return convertToDTO(userRepository.save(user));
+    }
+
+    // ─── Supprimer un utilisateur (sans rôle en paramètre) ── AJOUTÉ ──────────
+    public void deleteUser(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé avec l'ID : " + id));
+
         if (user.getRole().getCode() == RoleEnum.SUPER_ADMIN) {
-            throw new Exception("Impossible de supprimer le SUPER_ADMIN");
+            throw new SecurityException("Impossible de supprimer le SUPER_ADMIN");
         }
 
-        // Supprimer
         userRepository.delete(user);
     }
 
-    /**
-     * Vérifier les permissions de création d'un rôle
-     *
-     * PERMISSIONS:
-     * ✅ SUPER_ADMIN: peut créer tous les rôles
-     * ✅ REGISTRAR: peut créer STUDENT, TEACHER
-     * ❌ TEACHER/STUDENT: ne peuvent créer personne
-     *
-     * @param creatorRole Rôle du créateur
-     * @param targetRole Rôle à créer
-     * @throws Exception Si permissions insuffisantes
-     */
+    // ─── Supprimer avec vérification du rôle (ancienne version gardée) ─────────
+    public void deleteUser(Long id, String deleterRole) throws Exception {
+        if (!deleterRole.equals("SUPER_ADMIN")) {
+            throw new Exception("Seul SUPER_ADMIN peut supprimer des utilisateurs");
+        }
+        deleteUser(id);
+    }
+
+    // ─── Lister les enseignants ────────────────────────────────────────────────
+    public List<Teacher> getAllTeachers() {
+        return teacherRepository.findAll();
+    }
+
+    // ─── Récupérer un enseignant par ID ───────────────────────────────────────
+    public Teacher getTeacherById(Long id) {
+        return teacherRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Enseignant non trouvé avec l'ID : " + id));
+    }
+
+    // ─── Modifier un enseignant ────────────────────────────────────────────────
+    public Teacher updateTeacher(Long id, Teacher updated) {
+        Teacher existing = getTeacherById(id);
+        existing.setSpecialization(updated.getSpecialization());
+        existing.setDepartment(updated.getDepartment());
+        existing.setEmploymentStatus(updated.getEmploymentStatus());
+        existing.setSalary(updated.getSalary());
+        existing.setQualifications(updated.getQualifications());
+        return teacherRepository.save(existing);
+    }
+
+    // ─── Supprimer un enseignant ───────────────────────────────────────────────
+    public void deleteTeacher(Long id) {
+        if (!teacherRepository.existsById(id)) {
+            throw new EntityNotFoundException("Enseignant non trouvé avec l'ID : " + id);
+        }
+        teacherRepository.deleteById(id);
+    }
+
+    // ─── Vérification des permissions de création ─────────────────────────────
     private void checkPermissionToCreateRole(String creatorRole, RoleEnum targetRole) throws Exception {
-
         switch (creatorRole) {
-            case "SUPER_ADMIN":
-                // SUPER_ADMIN peut créer tous les rôles
-                return;
-
-            case "REGISTRAR":
-                // REGISTRAR peut créer STUDENT et TEACHER
-                if (targetRole == RoleEnum.STUDENT || targetRole == RoleEnum.TEACHER) {
-                    return;
-                }
-                throw new Exception("Agent de Scolarité peut créer: STUDENT, TEACHER");
-
-            case "TEACHER":
-                throw new Exception("Enseignant ne peut créer personne");
-
-            case "STUDENT":
-                throw new Exception("Étudiant ne peut créer personne");
-
-            default:
-                throw new Exception("Rôle de créateur invalide: " + creatorRole);
+            case "SUPER_ADMIN" -> { return; }
+            case "REGISTRAR" -> {
+                if (targetRole == RoleEnum.STUDENT || targetRole == RoleEnum.TEACHER) return;
+                throw new Exception("Agent de Scolarité peut créer uniquement : STUDENT, TEACHER");
+            }
+            case "TEACHER" -> throw new Exception("Enseignant ne peut créer personne");
+            case "STUDENT" -> throw new Exception("Étudiant ne peut créer personne");
+            default -> throw new Exception("Rôle de créateur invalide : " + creatorRole);
         }
     }
 
-    /**
-     * Convertir User en UserDTO (sans password pour sécurité)
-     */
+    // ─── Convertir User → UserDTO (sans password) ─────────────────────────────
     private UserDTO convertToDTO(User user) {
         return UserDTO.builder()
                 .id(user.getId())
@@ -199,6 +216,9 @@ public class UserService {
                 .lastName(user.getLastName())
                 .role(user.getRole().getCode().toString())
                 .isActive(user.getIsActive())
+                .phoneNumber(user.getPhone())
+                .address(user.getAddress())
+                .avatarUrl(user.getAvatarUrl())
                 .build();
     }
 }

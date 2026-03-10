@@ -3,13 +3,13 @@ package com.beedigital.educenter.repositories;
 import com.beedigital.educenter.entity.Student;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import java.util.Optional;
 
 @Repository
 public interface StudentRepository extends JpaRepository<Student, Long> {
 
-    Student findByStudentId(String studentId);
+    Optional<Student> findByStudentId(String studentId);
 
-    Student findByEmail(String email);
-
-    Student findByMatricule(String matricule);
+    // email est hérité de User, findById/existsById fournis par JpaRepository
+    Optional<Student> findByEmail(String email);
 }
