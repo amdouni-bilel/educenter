@@ -19,7 +19,7 @@ import java.util.List;
  * @version 1.0
  */
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/api/registration")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class RegistrationController {
 

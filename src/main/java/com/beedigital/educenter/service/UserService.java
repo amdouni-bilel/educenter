@@ -2,223 +2,230 @@ package com.beedigital.educenter.service;
 
 import com.beedigital.educenter.dto.UserDTO;
 import com.beedigital.educenter.dto.CreateUserRequest;
-import com.beedigital.educenter.entity.User;
-import com.beedigital.educenter.entity.Role;
-import com.beedigital.educenter.entity.Teacher;
+import com.beedigital.educenter.entity.*;
 import com.beedigital.educenter.enums.RoleEnum;
-import com.beedigital.educenter.repositories.UserRepository;
-import com.beedigital.educenter.repositories.RoleRepository;
-import com.beedigital.educenter.repositories.TeacherRepository;
+import com.beedigital.educenter.repositories.*;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * UserService - Service pour la gestion des utilisateurs (CRUD)
- *
- * PERMISSIONS:
- * ✅ SUPER_ADMIN : Peut créer TOUS les rôles
- * ✅ REGISTRAR   : Peut créer STUDENT, TEACHER
- * ❌ TEACHER     : Ne peut créer personne
- * ❌ STUDENT     : Ne peut créer personne
- */
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
-    private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final UserRepository    userRepository;
+    private final RoleRepository    roleRepository;
+    private final PasswordEncoder   passwordEncoder;
     private final TeacherRepository teacherRepository;
 
-    // ─── Créer un utilisateur ──────────────────────────────────────────────────
+    // ─── Créer un utilisateur ─────────────────────────────────────────────────
     public UserDTO createUser(CreateUserRequest request, String creatorRole) throws Exception {
+        if (userRepository.findByEmail(request.getEmail()) != null)
+            throw new Exception("Email déjà utilisé : " + request.getEmail());
 
-        // 1. Email unique ?
-        if (userRepository.findByEmail(request.getEmail()) != null) {
-            throw new Exception("Cet email est déjà utilisé");
+        RoleEnum roleEnum = RoleEnum.valueOf(request.getRoleCode());
+        checkPermission(creatorRole, roleEnum);
+
+        Role role = roleRepository.findByCode(roleEnum);
+        if (role == null) throw new Exception("Rôle non trouvé : " + request.getRoleCode());
+
+        User user = switch (roleEnum) {
+            case STUDENT -> {
+                Student s = new Student();
+                s.setCin(request.getCin());
+                s.setLevel(request.getLevel());
+                s.setStudyProgram(request.getStudyProgram());
+                s.setEnrollmentYear(request.getEnrollmentYear());
+                yield s;
+            }
+            case TEACHER -> {
+                Teacher t = new Teacher();
+                t.setDepartment(request.getDepartment());
+                t.setSpecialization(request.getSpecialization());
+                yield t;
+            }
+            default -> new User();
+        };
+
+        user.setFirstName(request.getFirstName());
+        user.setLastName(request.getLastName());
+        user.setEmail(request.getEmail());
+        user.setUsername(request.getEmail().split("@")[0]);
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setPhone(request.getPhone());
+        user.setAddress(request.getAddress());
+        user.setGender(request.getGender());
+        if (request.getBirthDate() != null && !request.getBirthDate().isBlank()) {
+            try { user.setBirthDate(request.getBirthDate()); } catch(Exception ignored) {}
         }
+        user.setRole(role);
+        user.setIsActive(true);
+        user.setRegistrationStatus("APPROVED");
 
-        // 2. Rôle valide ?
-        RoleEnum targetRole;
-        try {
-            targetRole = RoleEnum.valueOf(request.getRoleCode());
-        } catch (IllegalArgumentException e) {
-            throw new Exception("Rôle invalide: " + request.getRoleCode());
-        }
-
-        // 3. Permissions du créateur
-        checkPermissionToCreateRole(creatorRole, targetRole);
-
-        // 4. Récupérer le rôle en base
-        Role role = roleRepository.findByCode(targetRole);
-        if (role == null) {
-            throw new Exception("Rôle non trouvé en base de données");
-        }
-
-        // 5. Créer l'utilisateur
-        User newUser = User.builder()
-                .username(request.getEmail().split("@")[0])
-                .email(request.getEmail())
-                .password(passwordEncoder.encode(request.getPassword()))
-                .firstName(request.getFirstName())
-                .lastName(request.getLastName())
-                .phone(request.getPhone())
-                .address(request.getAddress())
-                .role(role)
-                .isActive(true)
-                .registrationStatus("APPROVED")
-                .build();
-
-        return convertToDTO(userRepository.save(newUser));
+        return toDTO(userRepository.save(user));
     }
 
-    // ─── Lister tous les utilisateurs ─────────────────────────────────────────
+    // ─── Lister tous — exclut PENDING et REJECTED ────────────────────────────
     public List<UserDTO> getAllUsers() {
-        return userRepository.findAll()
-                .stream()
-                .map(this::convertToDTO)
+        return userRepository.findAll().stream()
+                .filter(u -> !"PENDING".equals(u.getRegistrationStatus())
+                        && !"REJECTED".equals(u.getRegistrationStatus()))
+                .map(this::toDTO)
                 .collect(Collectors.toList());
     }
 
-    // ─── Récupérer par ID ──────────────────────────────────────────────────────
+    // ─── Par ID ───────────────────────────────────────────────────────────────
     public UserDTO getUserById(Long id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé avec l'ID : " + id));
-        return convertToDTO(user);
+        return toDTO(userRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé : " + id)));
     }
 
-    // ─── Récupérer par email (pour /me) ── AJOUTÉ ─────────────────────────────
+    // ─── Par email ────────────────────────────────────────────────────────────
     public UserDTO getUserByEmail(String email) {
         User user = userRepository.findByEmail(email);
-        if (user == null) {
-            throw new EntityNotFoundException("Utilisateur non trouvé avec l'email : " + email);
-        }
-        return convertToDTO(user);
+        if (user == null) throw new EntityNotFoundException("Utilisateur non trouvé : " + email);
+        return toDTO(user);
     }
 
-    // ─── Modifier un utilisateur ── AJOUTÉ ────────────────────────────────────
+    // ─── Modifier ─────────────────────────────────────────────────────────────
     public UserDTO updateUser(Long id, CreateUserRequest request) throws Exception {
         User existing = userRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé avec l'ID : " + id));
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé : " + id));
 
-        // Vérifier email unique si changé
         if (!existing.getEmail().equals(request.getEmail())) {
-            if (userRepository.findByEmail(request.getEmail()) != null) {
+            if (userRepository.findByEmail(request.getEmail()) != null)
                 throw new Exception("Cet email est déjà utilisé");
-            }
             existing.setEmail(request.getEmail());
             existing.setUsername(request.getEmail().split("@")[0]);
         }
-
         existing.setFirstName(request.getFirstName());
         existing.setLastName(request.getLastName());
         existing.setPhone(request.getPhone());
         existing.setAddress(request.getAddress());
-
-        // Changer le mot de passe seulement si fourni
-        if (request.getPassword() != null && !request.getPassword().isBlank()) {
+        if (request.getPassword() != null && !request.getPassword().isBlank())
             existing.setPassword(passwordEncoder.encode(request.getPassword()));
+
+        if (existing instanceof Student student) {
+            if (request.getCin()            != null) student.setCin(request.getCin());
+            if (request.getLevel()          != null) student.setLevel(request.getLevel());
+            if (request.getStudyProgram()   != null) student.setStudyProgram(request.getStudyProgram());
+            if (request.getEnrollmentYear() != null) student.setEnrollmentYear(request.getEnrollmentYear());
+        }
+        if (existing instanceof Teacher teacher) {
+            if (request.getDepartment()     != null) teacher.setDepartment(request.getDepartment());
+            if (request.getSpecialization() != null) teacher.setSpecialization(request.getSpecialization());
         }
 
-        return convertToDTO(userRepository.save(existing));
+        return toDTO(userRepository.save(existing));
     }
 
-    // ─── Activer / Désactiver un utilisateur ── AJOUTÉ ────────────────────────
+    // ─── Activer / Désactiver ─────────────────────────────────────────────────
     public UserDTO toggleStatus(Long id, Boolean isActive) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé avec l'ID : " + id));
-
-        // Impossible de désactiver un SUPER_ADMIN
-        if (user.getRole().getCode() == RoleEnum.SUPER_ADMIN && !isActive) {
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé : " + id));
+        if (user.getRole().getCode() == RoleEnum.SUPER_ADMIN && !isActive)
             throw new SecurityException("Impossible de désactiver le SUPER_ADMIN");
-        }
-
         user.setIsActive(isActive);
-        return convertToDTO(userRepository.save(user));
+        return toDTO(userRepository.save(user));
     }
 
-    // ─── Supprimer un utilisateur (sans rôle en paramètre) ── AJOUTÉ ──────────
+    // ─── Supprimer ────────────────────────────────────────────────────────────
     public void deleteUser(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé avec l'ID : " + id));
-
-        if (user.getRole().getCode() == RoleEnum.SUPER_ADMIN) {
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé : " + id));
+        if (user.getRole().getCode() == RoleEnum.SUPER_ADMIN)
             throw new SecurityException("Impossible de supprimer le SUPER_ADMIN");
-        }
-
         userRepository.delete(user);
     }
 
-    // ─── Supprimer avec vérification du rôle (ancienne version gardée) ─────────
-    public void deleteUser(Long id, String deleterRole) throws Exception {
-        if (!deleterRole.equals("SUPER_ADMIN")) {
-            throw new Exception("Seul SUPER_ADMIN peut supprimer des utilisateurs");
-        }
-        deleteUser(id);
-    }
+    // ─── Enseignants ──────────────────────────────────────────────────────────
+    public List<Teacher> getAllTeachers() { return teacherRepository.findAll(); }
 
-    // ─── Lister les enseignants ────────────────────────────────────────────────
-    public List<Teacher> getAllTeachers() {
-        return teacherRepository.findAll();
-    }
-
-    // ─── Récupérer un enseignant par ID ───────────────────────────────────────
     public Teacher getTeacherById(Long id) {
         return teacherRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Enseignant non trouvé avec l'ID : " + id));
+                .orElseThrow(() -> new EntityNotFoundException("Enseignant non trouvé : " + id));
     }
 
-    // ─── Modifier un enseignant ────────────────────────────────────────────────
     public Teacher updateTeacher(Long id, Teacher updated) {
         Teacher existing = getTeacherById(id);
         existing.setSpecialization(updated.getSpecialization());
         existing.setDepartment(updated.getDepartment());
-        existing.setEmploymentStatus(updated.getEmploymentStatus());
-        existing.setSalary(updated.getSalary());
-        existing.setQualifications(updated.getQualifications());
         return teacherRepository.save(existing);
     }
 
-    // ─── Supprimer un enseignant ───────────────────────────────────────────────
-    public void deleteTeacher(Long id) {
-        if (!teacherRepository.existsById(id)) {
-            throw new EntityNotFoundException("Enseignant non trouvé avec l'ID : " + id);
-        }
-        teacherRepository.deleteById(id);
+    // ─── Inscriptions en attente ──────────────────────────────────────────────
+    public List<UserDTO> getPendingUsers() {
+        return userRepository.findByRegistrationStatus("PENDING").stream()
+                .map(this::toDTO).collect(Collectors.toList());
     }
 
-    // ─── Vérification des permissions de création ─────────────────────────────
-    private void checkPermissionToCreateRole(String creatorRole, RoleEnum targetRole) throws Exception {
+    public UserDTO approveRegistration(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé : " + id));
+        user.setRegistrationStatus("APPROVED");
+        user.setIsActive(true);
+        if (user instanceof Student student) {
+            long count = userRepository.countByRole_Code(RoleEnum.STUDENT);
+            student.setStudentId("STU" + String.format("%03d", count + 1));
+        }
+        return toDTO(userRepository.save(user));
+    }
+
+    // ─── ✅ FIX : Rejeter = supprimer complètement ───────────────────────────
+    public void rejectRegistration(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur non trouvé : " + id));
+        // Suppression complète — l'utilisateur ne doit pas rester dans le système
+        userRepository.delete(user);
+    }
+
+    // ─── Vérification permissions ─────────────────────────────────────────────
+    private void checkPermission(String creatorRole, RoleEnum targetRole) throws Exception {
         switch (creatorRole) {
             case "SUPER_ADMIN" -> { return; }
-            case "REGISTRAR" -> {
+            case "REGISTRAR"   -> {
                 if (targetRole == RoleEnum.STUDENT || targetRole == RoleEnum.TEACHER) return;
-                throw new Exception("Agent de Scolarité peut créer uniquement : STUDENT, TEACHER");
+                throw new Exception("REGISTRAR peut créer uniquement STUDENT ou TEACHER");
             }
-            case "TEACHER" -> throw new Exception("Enseignant ne peut créer personne");
-            case "STUDENT" -> throw new Exception("Étudiant ne peut créer personne");
-            default -> throw new Exception("Rôle de créateur invalide : " + creatorRole);
+            default -> throw new Exception("Non autorisé à créer des utilisateurs");
         }
     }
 
-    // ─── Convertir User → UserDTO (sans password) ─────────────────────────────
-    private UserDTO convertToDTO(User user) {
-        return UserDTO.builder()
+    // ─── toDTO — unique, complète ─────────────────────────────────────────────
+    private UserDTO toDTO(User user) {
+        UserDTO.UserDTOBuilder dto = UserDTO.builder()
                 .id(user.getId())
                 .username(user.getUsername())
-                .email(user.getEmail())
                 .firstName(user.getFirstName())
                 .lastName(user.getLastName())
-                .role(user.getRole().getCode().toString())
-                .isActive(user.getIsActive())
-                .phoneNumber(user.getPhone())
+                .email(user.getEmail())
+                .phone(user.getPhone())
                 .address(user.getAddress())
-                .avatarUrl(user.getAvatarUrl())
-                .build();
+                .gender(user.getGender())
+                .role(user.getRole() != null ? user.getRole().getCode().toString() : null)
+                .isActive(user.getIsActive())
+                .registrationStatus(user.getRegistrationStatus())
+                .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null)
+                .birthDate(user.getBirthDate() != null ? user.getBirthDate().toString() : null);
+
+        if (user instanceof Student s) {
+            dto.studentId(s.getStudentId())
+                    .cin(s.getCin())
+                    .groupName(s.getGroupName())
+                    .level(s.getLevel())
+                    .studyProgram(s.getStudyProgram())
+                    .enrollmentYear(s.getEnrollmentYear());
+        }
+        if (user instanceof Teacher t) {
+            dto.department(t.getDepartment())
+                    .specialization(t.getSpecialization());
+        }
+
+        return dto.build();
     }
 }

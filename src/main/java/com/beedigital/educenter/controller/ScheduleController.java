@@ -1,153 +1,93 @@
 package com.beedigital.educenter.controller;
 
 import com.beedigital.educenter.dto.ApiResponse;
-import com.beedigital.educenter.entity.Schedule;
+import com.beedigital.educenter.dto.CreateScheduleRequest;
 import com.beedigital.educenter.service.ScheduleService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.format.annotation.DateTimeFormat;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalTime;
-import java.util.List;
+import java.util.Map;
 
-/**
- * ScheduleController - Endpoints pour gérer les emplois du temps
- *
- * Endpoints:
- * - POST   /api/schedules              - Créer emploi du temps (ADMIN)
- * - GET    /api/schedules/group/{id}   - Classes d'un groupe
- * - GET    /api/schedules/teacher/{id} - Classes d'un enseignant
- * - GET    /api/schedules/day/{day}    - Classes d'un jour
- * - DELETE /api/schedules/{id}         - Supprimer (ADMIN)
- *
- * @author Équipe Développement
- * @version 1.0
- */
 @RestController
 @RequestMapping("/api/schedules")
+@CrossOrigin(origins = "*", maxAge = 3600)
+@RequiredArgsConstructor
 public class ScheduleController {
 
-    @Autowired
-    private ScheduleService scheduleService;
+    private final ScheduleService scheduleService;
 
-    /**
-     * Créer un nouvel emploi du temps
-     *
-     * ADMIN ONLY
-     */
+    // GET /api/schedules — toutes les séances
+    @GetMapping
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR','TEACHER','STUDENT','PARENT')")
+    public ResponseEntity<?> getAll() {
+        try { return ResponseEntity.ok(new ApiResponse(true, "OK", scheduleService.getAllSchedules())); }
+        catch (Exception e) { return ResponseEntity.status(500).body(new ApiResponse(false, e.getMessage(), null)); }
+    }
+
+    // GET /api/schedules/date/{date}
+    @GetMapping("/date/{date}")
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR','TEACHER','STUDENT','PARENT')")
+    public ResponseEntity<?> getByDate(@PathVariable String date) {
+        try { return ResponseEntity.ok(new ApiResponse(true, "OK", scheduleService.getByDate(date))); }
+        catch (Exception e) { return ResponseEntity.status(500).body(new ApiResponse(false, e.getMessage(), null)); }
+    }
+
+    // GET /api/schedules/group/{name}
+    @GetMapping("/group/{name}")
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR','TEACHER','STUDENT','PARENT')")
+    public ResponseEntity<?> getByGroup(@PathVariable String name) {
+        try { return ResponseEntity.ok(new ApiResponse(true, "OK", scheduleService.getByGroup(name))); }
+        catch (Exception e) { return ResponseEntity.status(500).body(new ApiResponse(false, e.getMessage(), null)); }
+    }
+
+    // GET /api/schedules/teacher/{id}
+    @GetMapping("/teacher/{id}")
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR','TEACHER')")
+    public ResponseEntity<?> getByTeacher(@PathVariable Long id) {
+        try { return ResponseEntity.ok(new ApiResponse(true, "OK", scheduleService.getByTeacher(id))); }
+        catch (Exception e) { return ResponseEntity.status(500).body(new ApiResponse(false, e.getMessage(), null)); }
+    }
+
+    // POST /api/schedules
     @PostMapping
-    public ResponseEntity<?> createSchedule(
-            @RequestParam Long moduleId,
-            @RequestParam Long teacherId,
-            @RequestParam Long groupId,
-            @RequestParam String dayOfWeek,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.TIME) LocalTime startTime,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.TIME) LocalTime endTime,
-            @RequestParam String room,
-            @RequestParam(defaultValue = "CM") String type) {
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR')")
+    public ResponseEntity<?> create(@Valid @RequestBody CreateScheduleRequest req) {
         try {
-            Schedule schedule = scheduleService.createSchedule(
-                    moduleId, teacherId, groupId,
-                    dayOfWeek, startTime, endTime,
-                    room, type
-            );
-
-            return ResponseEntity.status(201)
-                    .body(new ApiResponse(
-                            true,
-                            "✅ Emploi du temps créé",
-                            schedule
-                    ));
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(new ApiResponse(true, "✅ Séance créée", scheduleService.createSchedule(req)));
         } catch (Exception e) {
-            return ResponseEntity.status(400)
-                    .body(new ApiResponse(false, "❌ " + e.getMessage(), null));
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ApiResponse(false, e.getMessage(), null));
         }
     }
 
-    /**
-     * Obtenir tous les emplois du temps d'un groupe
-     *
-     * STUDENT peut voir son propre groupe
-     * ADMIN peut voir tous les groupes
-     */
-    @GetMapping("/group/{groupId}")
-    public ResponseEntity<?> getGroupSchedule(@PathVariable Long groupId) {
-        try {
-            List<Schedule> schedules = scheduleService.getGroupSchedule(groupId);
-
-            return ResponseEntity.ok(new ApiResponse(
-                    true,
-                    "✅ Emplois du temps du groupe",
-                    schedules
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.status(400)
-                    .body(new ApiResponse(false, "❌ " + e.getMessage(), null));
-        }
+    // PUT /api/schedules/{id}
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR')")
+    public ResponseEntity<?> update(@PathVariable Long id, @Valid @RequestBody CreateScheduleRequest req) {
+        try { return ResponseEntity.ok(new ApiResponse(true, "✅ Séance modifiée", scheduleService.updateSchedule(id, req))); }
+        catch (Exception e) { return ResponseEntity.status(400).body(new ApiResponse(false, e.getMessage(), null)); }
     }
 
-    /**
-     * Obtenir tous les emplois du temps d'un enseignant
-     *
-     * TEACHER voit ses propres classes
-     * ADMIN peut voir les classes de n'importe quel enseignant
-     */
-    @GetMapping("/teacher/{teacherId}")
-    public ResponseEntity<?> getTeacherSchedule(@PathVariable Long teacherId) {
+    // PATCH /api/schedules/{id}/cancel
+    @PatchMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR')")
+    public ResponseEntity<?> cancel(@PathVariable Long id, @RequestBody Map<String, String> body) {
         try {
-            List<Schedule> schedules = scheduleService.getTeacherSchedule(teacherId);
-
-            return ResponseEntity.ok(new ApiResponse(
-                    true,
-                    "✅ Classes de l'enseignant",
-                    schedules
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.status(400)
-                    .body(new ApiResponse(false, "❌ " + e.getMessage(), null));
-        }
+            String reason = body.getOrDefault("reason", "");
+            return ResponseEntity.ok(new ApiResponse(true, "⚠️ Séance annulée", scheduleService.cancelSchedule(id, reason)));
+        } catch (Exception e) { return ResponseEntity.status(400).body(new ApiResponse(false, e.getMessage(), null)); }
     }
 
-    /**
-     * Obtenir les emplois du temps d'un jour spécifique
-     *
-     * LUNDI, MARDI, MERCREDI, JEUDI, VENDREDI
-     */
-    @GetMapping("/day/{day}")
-    public ResponseEntity<?> getScheduleByDay(@PathVariable String day) {
-        try {
-            List<Schedule> schedules = scheduleService.getScheduleByDay(day);
-
-            return ResponseEntity.ok(new ApiResponse(
-                    true,
-                    "✅ Classes du " + day,
-                    schedules
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.status(400)
-                    .body(new ApiResponse(false, "❌ " + e.getMessage(), null));
-        }
-    }
-
-    /**
-     * Supprimer un emploi du temps
-     *
-     * ADMIN ONLY
-     */
-    @DeleteMapping("/{scheduleId}")
-    public ResponseEntity<?> deleteSchedule(@PathVariable Long scheduleId) {
-        try {
-            scheduleService.deleteSchedule(scheduleId);
-
-            return ResponseEntity.ok(new ApiResponse(
-                    true,
-                    "✅ Emploi du temps supprimé",
-                    null
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.status(400)
-                    .body(new ApiResponse(false, "❌ " + e.getMessage(), null));
-        }
+    // DELETE /api/schedules/{id}
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
+    public ResponseEntity<?> delete(@PathVariable Long id) {
+        try { scheduleService.deleteSchedule(id); return ResponseEntity.ok(new ApiResponse(true, "✅ Séance supprimée", null)); }
+        catch (Exception e) { return ResponseEntity.status(400).body(new ApiResponse(false, e.getMessage(), null)); }
     }
 }

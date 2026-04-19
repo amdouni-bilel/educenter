@@ -21,17 +21,17 @@ public class UserController {
 
     private final UserService userService;
 
-    // ─── Créer un utilisateur ──────────────────────────────────────────────────
+    // ─── Créer un utilisateur ─────────────────────────────────────────────────
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR')")
     public ResponseEntity<?> createUser(
             @Valid @RequestBody CreateUserRequest request,
             Authentication authentication) {
         try {
             String creatorRole = authentication.getAuthorities().iterator().next().getAuthority();
-            UserDTO newUser = userService.createUser(request, creatorRole);
+            UserDTO created = userService.createUser(request, creatorRole);
             return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(new ApiResponse(true, "Utilisateur créé avec succès", newUser));
+                    .body(new ApiResponse(true, "✅ Utilisateur créé", created));
         } catch (SecurityException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(new ApiResponse(false, e.getMessage(), null));
@@ -41,86 +41,104 @@ public class UserController {
         }
     }
 
-    // ─── Lister tous les utilisateurs ─────────────────────────────────────────
+    // ─── Tous les utilisateurs ────────────────────────────────────────────────
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR')")
     public ResponseEntity<?> getAllUsers() {
         try {
-            List<UserDTO> users = userService.getAllUsers();
-            return ResponseEntity.ok(new ApiResponse(true, "Utilisateurs récupérés", users));
+            return ResponseEntity.ok(new ApiResponse(true, "OK", userService.getAllUsers()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ApiResponse(false, e.getMessage(), null));
+            return ResponseEntity.status(500).body(new ApiResponse(false, e.getMessage(), null));
         }
     }
 
-    // ─── Mon propre profil (tous les rôles) ────────────────────────────────────
+    // ─── Mon profil ───────────────────────────────────────────────────────────
     @GetMapping("/me")
     public ResponseEntity<?> getMyProfile(Authentication authentication) {
         try {
-            String email = authentication.getName();
-            UserDTO user = userService.getUserByEmail(email);
-            return ResponseEntity.ok(new ApiResponse(true, "Profil récupéré", user));
+            return ResponseEntity.ok(new ApiResponse(true, "OK", userService.getUserByEmail(authentication.getName())));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ApiResponse(false, e.getMessage(), null));
+            return ResponseEntity.status(404).body(new ApiResponse(false, e.getMessage(), null));
         }
     }
 
-    // ─── Détail d'un utilisateur par ID ───────────────────────────────────────
+    // ─── Par ID ───────────────────────────────────────────────────────────────
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR')")
     public ResponseEntity<?> getUserById(@PathVariable Long id) {
         try {
-            UserDTO user = userService.getUserById(id);
-            return ResponseEntity.ok(new ApiResponse(true, "Utilisateur trouvé", user));
+            return ResponseEntity.ok(new ApiResponse(true, "OK", userService.getUserById(id)));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ApiResponse(false, "Utilisateur non trouvé", null));
+            return ResponseEntity.status(404).body(new ApiResponse(false, e.getMessage(), null));
         }
     }
 
-    // ─── Modifier un utilisateur ───────────────────────────────────────────────
+    // ─── Modifier ─────────────────────────────────────────────────────────────
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<?> updateUser(
-            @PathVariable Long id,
-            @Valid @RequestBody CreateUserRequest request) {
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR')")
+    public ResponseEntity<?> updateUser(@PathVariable Long id, @Valid @RequestBody CreateUserRequest request) {
         try {
-            UserDTO updated = userService.updateUser(id, request);
-            return ResponseEntity.ok(new ApiResponse(true, "Utilisateur mis à jour", updated));
+            return ResponseEntity.ok(new ApiResponse(true, "✅ Mis à jour", userService.updateUser(id, request)));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ApiResponse(false, e.getMessage(), null));
+            return ResponseEntity.status(400).body(new ApiResponse(false, e.getMessage(), null));
         }
     }
 
-    // ─── Activer / Désactiver un utilisateur ───────────────────────────────────
+    // ─── Activer / Désactiver ─────────────────────────────────────────────────
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasAuthority('SUPER_ADMIN')")
-    public ResponseEntity<?> toggleUserStatus(
-            @PathVariable Long id,
-            @RequestParam Boolean isActive) {
+    public ResponseEntity<?> toggleStatus(@PathVariable Long id, @RequestParam Boolean isActive) {
         try {
-            UserDTO updated = userService.toggleStatus(id, isActive);
-            String msg = isActive ? "Utilisateur activé" : "Utilisateur désactivé";
-            return ResponseEntity.ok(new ApiResponse(true, msg, updated));
+            return ResponseEntity.ok(new ApiResponse(true, isActive ? "✅ Activé" : "⏸ Désactivé", userService.toggleStatus(id, isActive)));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ApiResponse(false, e.getMessage(), null));
+            return ResponseEntity.status(400).body(new ApiResponse(false, e.getMessage(), null));
         }
     }
 
-    // ─── Supprimer un utilisateur ──────────────────────────────────────────────
+    // ─── Supprimer ────────────────────────────────────────────────────────────
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     public ResponseEntity<?> deleteUser(@PathVariable Long id) {
         try {
             userService.deleteUser(id);
-            return ResponseEntity.ok(new ApiResponse(true, "Utilisateur supprimé", null));
+            return ResponseEntity.ok(new ApiResponse(true, "✅ Supprimé", null));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ApiResponse(false, e.getMessage(), null));
+            return ResponseEntity.status(400).body(new ApiResponse(false, e.getMessage(), null));
+        }
+    }
+
+    // ─── Demandes en attente ──────────────────────────────────────────────────
+    @GetMapping("/pending")
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR')")
+    public ResponseEntity<?> getPending() {
+        try {
+            return ResponseEntity.ok(new ApiResponse(true, "OK", userService.getPendingUsers()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ApiResponse(false, e.getMessage(), null));
+        }
+    }
+
+    // ─── Approuver ────────────────────────────────────────────────────────────
+    @PatchMapping("/{id}/approve")
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR')")
+    public ResponseEntity<?> approve(@PathVariable Long id) {
+        try {
+            UserDTO approved = userService.approveRegistration(id);
+            return ResponseEntity.ok(new ApiResponse(true, "✅ Inscription approuvée pour " + approved.getFirstName(), approved));
+        } catch (Exception e) {
+            return ResponseEntity.status(400).body(new ApiResponse(false, e.getMessage(), null));
+        }
+    }
+
+    // ─── Rejeter ──────────────────────────────────────────────────────────────
+    @PatchMapping("/{id}/reject")
+    @PreAuthorize("hasAnyAuthority('SUPER_ADMIN','REGISTRAR')")
+    public ResponseEntity<?> reject(@PathVariable Long id) {
+        try {
+            userService.rejectRegistration(id);
+            return ResponseEntity.ok(new ApiResponse(true, "🗑️ Demande rejetée", null));
+        } catch (Exception e) {
+            return ResponseEntity.status(400).body(new ApiResponse(false, e.getMessage(), null));
         }
     }
 }

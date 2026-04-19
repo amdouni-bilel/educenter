@@ -41,16 +41,17 @@ public class User {
     @Column(length = 255)
     private String address;
 
-    // ─── Ajoutés ici car communs à tous les utilisateurs ───────────────────────
     @Column(length = 10)
     private String gender;          // M, F, AUTRE
 
     @Column(length = 100)
-    private String nationality;     // Tunisienne, Française, etc.
-    // ───────────────────────────────────────────────────────────────────────────
+    private String nationality;
+
+    @Column(length = 20)
+    private String birthDate;       // commun : teacher/parent/étudiant ex: "2003-04-12"
 
     @Column(length = 500)
-    private String avatarUrl;       // Photo de profil
+    private String avatarUrl;
 
     @Column(length = 500)
     private String verificationToken;
@@ -117,15 +118,15 @@ public class User {
     }
 
     public boolean isPending() {
-        return registrationStatus != null && registrationStatus.equals("PENDING");
+        return "PENDING".equals(registrationStatus);
     }
 
     public boolean isApproved() {
-        return registrationStatus != null && registrationStatus.equals("APPROVED");
+        return "APPROVED".equals(registrationStatus);
     }
 
     public boolean canLogin() {
-        return isActive && isApproved();
+        return Boolean.TRUE.equals(isActive) && isApproved();
     }
 
     public String getInitials() {

@@ -1,8 +1,10 @@
 package com.beedigital.educenter.entity;
 
-import lombok.*;
 import jakarta.persistence.*;
+import lombok.*;
+import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "schedules")
@@ -16,24 +18,38 @@ public class Schedule {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "module_id")
-    private Module module;
-
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "teacher_id")
     private Teacher teacher;
 
-    @ManyToOne
-    @JoinColumn(name = "group_id")
-    private Group group;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "course_id")
+    private Course course;
 
-    private String dayOfWeek;
+    private LocalDate date;
     private LocalTime startTime;
     private LocalTime endTime;
 
     @Column(length = 50)
     private String room;
 
-    private String type;
+    @Column(length = 10)
+    private String type;            // CM, TD, TP, EXAM
+
+    @Column(length = 20)
+    private String groupName;
+
+    @Column(length = 10)
+    private String semester;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean isCancelled = false;
+
+    @Column(columnDefinition = "TEXT")
+    private String cancelReason;
+
+    @Column(nullable = false, updatable = false)
+    @Builder.Default
+    private LocalDateTime createdAt = LocalDateTime.now();
 }

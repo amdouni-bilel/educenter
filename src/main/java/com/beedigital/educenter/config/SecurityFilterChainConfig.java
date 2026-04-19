@@ -53,11 +53,13 @@ public class SecurityFilterChainConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authorizeHttpRequests(authz -> authz
-                        // ✅ PUBLICS
+                        // ✅ PUBLICS - Auth
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/register").permitAll()
                         .requestMatchers("/api/auth/refresh").permitAll()
                         .requestMatchers("/api/auth/verify").permitAll()
+                        // ✅ PUBLICS - Registration self-service
+                        .requestMatchers("/api/registration/register").permitAll()
                         // ✅ Swagger
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // ✅ Actuator

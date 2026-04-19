@@ -21,15 +21,15 @@ public class Grade {
     private Student student;
 
     @ManyToOne
-    @JoinColumn(name = "module_id")
-    private Module module;
+    @JoinColumn(name = "course_id")
+    private Course course;
 
     @ManyToOne
     @JoinColumn(name = "teacher_id")
     private Teacher teacher;
 
-    private String evaluationType;
-    private Double value;
+    private String evaluationType;  // DS, EXAM, TP
+    private Double value;           // note /20
     private Double coefficient;
 
     @Builder.Default
@@ -38,4 +38,8 @@ public class Grade {
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    public Boolean getIsValidated() { return isValidated; }
+    public Double getValue()        { return value; }
+    public Double getCoefficient()  { return coefficient; }
 }

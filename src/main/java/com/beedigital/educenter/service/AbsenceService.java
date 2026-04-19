@@ -1,119 +1,83 @@
 package com.beedigital.educenter.service;
 
-import com.beedigital.educenter.dto.ApiResponse;
+import com.beedigital.educenter.dto.AbsenceDTO;
+import com.beedigital.educenter.dto.CreateAbsenceRequest;
 import com.beedigital.educenter.entity.Absence;
-import com.beedigital.educenter.entity.Student;
 import com.beedigital.educenter.repositories.AbsenceRepository;
-import com.beedigital.educenter.repositories.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import java.time.LocalDate;
-import java.util.List;
 
-/**
- * AbsenceService - Service pour gérer les absences
- *
- * Fonctionnalités:
- * - Ajouter une absence
- * - Lister les absences d'un étudiant
- * - Justifier une absence
- * - Compter les absences
- *
- * @author Équipe Développement
- * @version 1.0
- */
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Service
+@RequiredArgsConstructor
 public class AbsenceService {
 
-    @Autowired
-    private AbsenceRepository absenceRepository;
+    private final AbsenceRepository absenceRepository;
 
-    @Autowired
-    private UserRepository userRepository;
+    public List<AbsenceDTO> getAll() {
+        return absenceRepository.findAll().stream().map(this::toDTO).collect(Collectors.toList());
+    }
 
-    /**
-     * Ajouter une absence
-     */
-    public void addAbsence(Long studentId, LocalDate date) throws Exception {
-        // Vérifier que l'étudiant existe
-        var user = userRepository.findById(studentId)
-                .orElseThrow(() -> new Exception("Étudiant non trouvé"));
+    public List<AbsenceDTO> getByStudent(Long studentId) {
+        return absenceRepository.findByStudentId(studentId).stream().map(this::toDTO).collect(Collectors.toList());
+    }
 
-        if (!(user instanceof Student)) {
-            throw new Exception("L'utilisateur n'est pas un étudiant");
-        }
+    public List<AbsenceDTO> getByGroup(String groupName) {
+        return absenceRepository.findByGroupName(groupName).stream().map(this::toDTO).collect(Collectors.toList());
+    }
 
-        Student student = (Student) user;
+    public AbsenceDTO create(CreateAbsenceRequest req) {
+        // Résoudre les alias
+        String course = req.getCourseLabel() != null ? req.getCourseLabel()
+                : req.getCourse() != null ? req.getCourse()
+                : req.getCourseName() != null ? req.getCourseName() : "—";
 
-        // Vérifier qu'il n'existe pas déjà une absence à cette date
-        Absence existing = absenceRepository.findByStudent_IdAndDate(studentId, date);
-        if (existing != null) {
-            throw new Exception("Une absence existe déjà pour cette date");
-        }
+        Boolean justified = req.getIsJustified() != null ? req.getIsJustified()
+                : req.getJustified() != null ? req.getJustified() : false;
 
-        // Créer l'absence
-        Absence absence = Absence.builder()
-                .student(student)
-                .date(date)
-                .isJustified(false)
+        Absence a = Absence.builder()
+                .studentId(req.getStudentId())
+                .studentName(req.getStudentName())
+                .groupName(req.getGroupName())
+                .courseLabel(course)
+                .date(req.getDate())
+                .type(req.getType() != null ? req.getType() : "CM")
+                .isJustified(justified)
+                .justification(req.getJustification())
                 .build();
-
-        absenceRepository.save(absence);
-        System.out.println("✅ Absence enregistrée pour: " + student.getEmail() + " le " + date);
+        return toDTO(absenceRepository.save(a));
     }
 
-    /**
-     * Obtenir toutes les absences d'un étudiant
-     */
-    public List<Absence> getStudentAbsences(Long studentId) throws Exception {
-        var user = userRepository.findById(studentId)
-                .orElseThrow(() -> new Exception("Étudiant non trouvé"));
-
-        return absenceRepository.findByStudent_Id(studentId);
+    public AbsenceDTO justify(Long id, String justification) {
+        Absence a = absenceRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Absence non trouvée : " + id));
+        a.setIsJustified(true);
+        if (justification != null) a.setJustification(justification);
+        return toDTO(absenceRepository.save(a));
     }
 
-    /**
-     * Compter les absences d'un étudiant
-     */
-    public Long countStudentAbsences(Long studentId) throws Exception {
-        var user = userRepository.findById(studentId)
-                .orElseThrow(() -> new Exception("Étudiant non trouvé"));
-
-        return absenceRepository.countByStudent_Id(studentId);
+    public void delete(Long id) {
+        if (!absenceRepository.existsById(id))
+            throw new EntityNotFoundException("Absence non trouvée : " + id);
+        absenceRepository.deleteById(id);
     }
 
-    /**
-     * Compter les absences non justifiées d'un étudiant
-     */
-    public Long countUnjustifiedAbsences(Long studentId) throws Exception {
-        var user = userRepository.findById(studentId)
-                .orElseThrow(() -> new Exception("Étudiant non trouvé"));
-
-        return absenceRepository.countByStudent_IdAndIsJustifiedFalse(studentId);
-    }
-
-    /**
-     * Justifier une absence
-     */
-    public void justifyAbsence(Long absenceId, String reason) throws Exception {
-        Absence absence = absenceRepository.findById(absenceId)
-                .orElseThrow(() -> new Exception("Absence non trouvée"));
-
-        absence.setIsJustified(true);
-        absence.setReason(reason != null && !reason.isEmpty() ? reason : "Justifiée");
-
-        absenceRepository.save(absence);
-        System.out.println("✅ Absence justifiée: " + absence.getId());
-    }
-
-    /**
-     * Supprimer une absence
-     */
-    public void deleteAbsence(Long absenceId) throws Exception {
-        Absence absence = absenceRepository.findById(absenceId)
-                .orElseThrow(() -> new Exception("Absence non trouvée"));
-
-        absenceRepository.delete(absence);
-        System.out.println("✅ Absence supprimée: " + absenceId);
+    private AbsenceDTO toDTO(Absence a) {
+        return AbsenceDTO.builder()
+                .id(a.getId())
+                .studentId(a.getStudentId())
+                .studentName(a.getStudentName())
+                .groupName(a.getGroupName())
+                .courseLabel(a.getCourseLabel())
+                .date(a.getDate())
+                .type(a.getType())
+                .isJustified(a.getIsJustified())
+                .justification(a.getJustification())
+                .createdAt(a.getCreatedAt() != null ? a.getCreatedAt().toString() : null)
+                .build();
     }
 }

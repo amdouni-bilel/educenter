@@ -1,32 +1,41 @@
 package com.beedigital.educenter.entity;
 
-import lombok.*;
 import jakarta.persistence.*;
-import java.time.LocalDate;
+import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "absences")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
+@Data @NoArgsConstructor @AllArgsConstructor @Builder
 public class Absence {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "student_id")
-    private Student student;
+    @Column(nullable = false)
+    private Long studentId;
 
-    private LocalDate date;
+    @Column(length = 100)
+    private String studentName;
 
+    @Column(length = 30)
+    private String groupName;
+
+    @Column(nullable = false, length = 100)
+    private String courseLabel;
+
+    @Column(nullable = false, length = 10)
+    private String date;            // "2024-03-18"
+
+    @Column(length = 5)
+    private String type;            // CM, TD, TP
+
+    @Column(nullable = false)
     @Builder.Default
     private Boolean isJustified = false;
 
-    private String reason;
+    @Column(columnDefinition = "TEXT")
+    private String justification;
 
     @Column(nullable = false, updatable = false)
     @Builder.Default
